@@ -59,7 +59,12 @@ LED Panel Layout in RAM
 #define PIN_DMD_R_DATA    11   // D11_MOSI is SPI Master Out if SPI is used
 //Define this chip select pin that the Ethernet W5100 IC or other SPI device uses
 //if it is in use during a DMD scan request then scanDisplayBySPI() will exit without conflict! (and skip that scan)
+#if defined(__AVR_ATmega2560__)
+// The Arduino Mega ADK default
+#define PIN_OTHER_SPI_nCS 53
+#else
 #define PIN_OTHER_SPI_nCS 10
+#endif
 // ######################################################################################################################
 // ######################################################################################################################
 
