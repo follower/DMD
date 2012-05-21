@@ -178,6 +178,10 @@ class DMD
 
     //Mirror of DMD pixels in RAM, ready to be clocked out by the main loop or high speed timer calls
     byte *bDMDScreenRAM;
+    byte *bDMDScreenRAM_Bank1;
+    byte *bDMDScreenRAM_Bank2;
+    byte *bDMDScreenRAM_ActiveDisplay;
+    volatile boolean swapBanks;
 
     //Marquee values
     char marqueeText[256];

@@ -39,7 +39,14 @@ DMD::DMD(byte panelsWide, byte panelsHigh)
     row1 = DisplaysTotal<<4;
     row2 = DisplaysTotal<<5;
     row3 = ((DisplaysTotal<<2)*3)<<2;
-    bDMDScreenRAM = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
+    //bDMDScreenRAM = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
+
+    bDMDScreenRAM_Bank1 = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
+    bDMDScreenRAM_Bank2 = (byte *) malloc(DisplaysTotal*DMD_RAM_SIZE_BYTES);
+
+    bDMDScreenRAM_ActiveDisplay = bDMDScreenRAM_Bank2; // What the SPI output routine uses
+    bDMDScreenRAM = bDMDScreenRAM_Bank1; // What the drawing operations act on
+    swapBanks = false;
 
     // initialize the SPI port
     SPI.begin();		// probably don't need this since it inits the port pins only, which we do just below with the appropriate DMD interface setup
@@ -62,6 +69,11 @@ DMD::DMD(byte panelsWide, byte panelsHigh)
     pinMode(PIN_DMD_nOE, OUTPUT);	//
 
     clearScreen(true);
+
+    bDMDScreenRAM = bDMDScreenRAM_Bank2;
+    clearScreen(true);
+    bDMDScreenRAM = bDMDScreenRAM_Bank1;
+
 
     // init the scan line/ram pointer to the required start point
     bDMDByte = 0;
@@ -195,6 +207,21 @@ boolean DMD::stepMarquee(int amountX, int amountY)
 
     // Special case horizontal scrolling to improve speed
     if (amountY==0 && amountX==-1) {
+
+      //while(bDMDByte != 0);
+      while (swapBanks); // wait for SPI output to use most recent bank
+
+#if 1
+        // Shift entire screen one bit
+        for (int i=0; i<DMD_RAM_SIZE_BYTES*DisplaysTotal;i++) {
+            if ((i%(DisplaysWide*4)) == (DisplaysWide*4) -1) {
+                bDMDScreenRAM[i]=(bDMDScreenRAM_ActiveDisplay[i]<<1)+1;
+            } else {
+                bDMDScreenRAM[i]=(bDMDScreenRAM_ActiveDisplay[i]<<1) + ((bDMDScreenRAM_ActiveDisplay[i+1] & 0x80) >>7);
+            }
+        }
+
+#else
         // Shift entire screen one bit
         for (int i=0; i<DMD_RAM_SIZE_BYTES*DisplaysTotal;i++) {
             if ((i%(DisplaysWide*4)) == (DisplaysWide*4) -1) {
@@ -204,16 +231,21 @@ boolean DMD::stepMarquee(int amountX, int amountY)
             }
         }
 
+#endif
         // Redraw last char on screen
         int strWidth=marqueeOffsetX;
         for (byte i=0; i < marqueeLength; i++) {
             int wide = charWidth(marqueeText[i]);
             if (strWidth+wide >= DisplaysWide*DMD_PIXELS_ACROSS) {
                 drawChar(strWidth, marqueeOffsetY,marqueeText[i],GRAPHICS_NORMAL);
+		swapBanks = true;
                 return ret;
             }
             strWidth += wide+1;
         }
+	
+	swapBanks = true;
+	
     } else if (amountY==0 && amountX==1) {
         // Shift entire screen one bit
         for (int i=(DMD_RAM_SIZE_BYTES*DisplaysTotal)-1; i>=0;i--) {
@@ -421,14 +453,26 @@ void DMD::scanDisplayBySPI()
     //if PIN_OTHER_SPI_nCS is in use during a DMD scan request then scanDisplayBySPI() will exit without conflict! (and skip that scan)
     if( digitalRead( PIN_OTHER_SPI_nCS ) == HIGH )
     {
+
+      if ((bDMDByte == 0) && swapBanks) {
+	if (bDMDScreenRAM_ActiveDisplay == bDMDScreenRAM_Bank1) {
+	  bDMDScreenRAM_ActiveDisplay = bDMDScreenRAM_Bank2;
+	  bDMDScreenRAM = bDMDScreenRAM_Bank1;
+	} else {
+	  bDMDScreenRAM_ActiveDisplay = bDMDScreenRAM_Bank1;
+	  bDMDScreenRAM = bDMDScreenRAM_Bank2;
+	}
+	swapBanks = false;
+      }
+
         //SPI transfer pixels to the display hardware shift registers
         int rowsize=DisplaysTotal<<2;
         int offset=rowsize * bDMDByte;
         for (int i=0;i<rowsize;i++) {
-            SPI.transfer(bDMDScreenRAM[offset+i+row3]);
-            SPI.transfer(bDMDScreenRAM[offset+i+row2]);
-            SPI.transfer(bDMDScreenRAM[offset+i+row1]);
-            SPI.transfer(bDMDScreenRAM[offset+i]);
+            SPI.transfer(bDMDScreenRAM_ActiveDisplay[offset+i+row3]);
+            SPI.transfer(bDMDScreenRAM_ActiveDisplay[offset+i+row2]);
+            SPI.transfer(bDMDScreenRAM_ActiveDisplay[offset+i+row1]);
+            SPI.transfer(bDMDScreenRAM_ActiveDisplay[offset+i]);
         }
 
         OE_DMD_ROWS_OFF();
